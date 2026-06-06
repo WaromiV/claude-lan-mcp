@@ -1,5 +1,26 @@
 # claude-lan-mcp
 
+> **Setting up with an agent?** Copy this prompt to your Claude Code (or other
+> coding agent) session:
+>
+> ```text
+> Install the claude-lan-mcp MCP server so I can talk to other Claude instances
+> on my LAN:
+>
+> 1. git clone https://github.com/WaromiV/claude-lan-mcp ~/claude-lan-mcp
+> 2. Build it: cd ~/claude-lan-mcp && cargo build --release
+>    (needs a Rust toolchain; install via rustup or the system package manager
+>    if missing)
+> 3. Register it with Claude Code at user scope:
+>    claude mcp add --scope user lan-claude -- ~/claude-lan-mcp/target/release/claude-lan-mcp
+> 4. Verify: claude mcp list should show lan-claude as Connected, and
+>    ./test/smoke.sh in the repo should print SMOKE OK.
+>
+> After my next session restart, the lan_* tools (lan_discover, lan_send,
+> lan_inbox, ...) will be available. UDP port 48618 must be open between
+> machines on the LAN.
+> ```
+
 An MCP server, written in Rust, that lets Claude instances discover and talk to
 each other across a LAN. Discovery is a multicast/broadcast burst that
 early-exits when replies go quiet — a scan typically completes in **under
