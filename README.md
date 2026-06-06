@@ -17,8 +17,9 @@
 >    ./test/smoke.sh in the repo should print SMOKE OK.
 >
 > After my next session restart, the lan_* tools (lan_discover, lan_send,
-> lan_inbox, ...) will be available. UDP port 48618 must be open between
-> machines on the LAN.
+> lan_inbox, ...) will be available. If I ask you to use them in THIS session
+> without restarting, follow the "Dynamic loading" section of the README.
+> UDP port 48618 must be open between machines on the LAN.
 > ```
 
 An MCP server, written in Rust, that lets Claude instances discover and talk to
@@ -65,6 +66,53 @@ the mesh.
 
 A conversation between two Claudes is just `lan_send` → `lan_inbox {"wait_ms": 25000}`
 ping-pong.
+
+## Dynamic loading — attach to a session that's already running
+
+`claude mcp add` only takes effect in *new* sessions; a running agent can't
+hot-load MCP servers. But since the server is plain newline-delimited JSON-RPC
+on stdio, an agent with shell access can attach it to itself live: run the
+binary as a background process with a FIFO as stdin, and write tool calls
+straight into the pipe.
+
+```sh
+mkdir -p /tmp/lanmcp && rm -f /tmp/lanmcp/in /tmp/lanmcp/out && mkfifo /tmp/lanmcp/in
+sleep infinity > /tmp/lanmcp/in &   # hold a writer open so the server never sees EOF
+CLAUDE_LAN_NAME=my-node ~/claude-lan-mcp/target/release/claude-lan-mcp \
+  < /tmp/lanmcp/in > /tmp/lanmcp/out 2>/tmp/lanmcp/err &
+```
+
+Handshake once:
+
+```sh
+printf '%s\n' \
+ '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"inline","version":"0"}}}' \
+ '{"jsonrpc":"2.0","method":"notifications/initialized"}' > /tmp/lanmcp/in
+```
+
+From then on, every tool is one write away — each later `> /tmp/lanmcp/in`
+opens and closes a transient writer, which is fine because the
+`sleep infinity` writer keeps the FIFO from EOF-ing:
+
+```sh
+printf '%s\n' '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"lan_discover","arguments":{"wait_ms":800}}}' > /tmp/lanmcp/in
+sleep 1; tail -1 /tmp/lanmcp/out
+```
+
+Or skip the manual steps and paste this prompt to the running agent:
+
+> Attach the claude-lan-mcp server to yourself dynamically, without a session
+> restart: start ~/claude-lan-mcp/target/release/claude-lan-mcp as a
+> persistent background process with a FIFO as its stdin (hold the FIFO open
+> with `sleep infinity > fifo &` so the server never sees EOF) and stdout
+> redirected to a file. Send the MCP initialize handshake (one initialize
+> request, one notifications/initialized), then drive the lan_* tools by
+> writing JSON-RPC `tools/call` lines into the FIFO and reading replies from
+> the output file. Pick a CLAUDE_LAN_NAME so peers can address you.
+
+The node stays up (announcing every 5s, inbox listening) until the background
+process is killed, so the session remains reachable on the mesh between tool
+calls.
 
 ## Configuration
 
